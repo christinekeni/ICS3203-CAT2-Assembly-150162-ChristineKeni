@@ -1,88 +1,145 @@
-section .data
-    prompt db "Enter a number: ", 0
-    result_msg db "Factorial is: ", 0
-    newline db 0xA, 0
 
-section .bss
-    input resb 4                       ; Reserve 4 bytes for input
+global _start
+
+section .data
+    sensor_value    dd 0        ; Simulated sensor input
+    motor_status    db 0        ; Motor status: 0=OFF, 1=ON
+    alarm_status    db 0        ; Alarm status: 0=OFF, 1=ON
+
+    HIGH_LEVEL      equ 80
+    MODERATE_LEVEL  equ 50
+
+    prompt          db 'Enter sensor value: ', 0
+    input_buffer    db 10 dup(0)
+    motor_msg       db 'Motor Status: ', 0
+    alarm_msg       db 'Alarm Status: ', 0
+    on_msg          db 'ON', 10, 0
+    off_msg         db 'OFF', 10, 0
 
 section .text
-    global _start
-
 _start:
-    ; Prompt user for input
-    mov rax, 1                         ; Syscall number for sys_write
-    mov rdi, 1                         ; File descriptor (stdout)
-    mov rsi, prompt                    ; Address of prompt message
-    mov rdx, 14                        ; Length of prompt
-    syscall                            ; Make syscall
+    ; Prompt for sensor value
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, prompt
+    mov     edx, 20             ; Length of the prompt
+    int     0x80
 
     ; Read user input
-    mov rax, 0                         ; Syscall number for sys_read
-    mov rdi, 0                         ; File descriptor (stdin)
-    mov rsi, input                     ; Address to store input
-    mov rdx, 4                         ; Number of bytes to read
-    syscall                            ; Make syscall
+    mov     eax, 3
+    mov     ebx, 0
+    mov     ecx, input_buffer
+    mov     edx, 10
+    int     0x80
 
-    ; Convert input ASCII to integer
-    movzx rax, byte [input]            ; Load input into rax
-    sub rax, '0'                       ; Convert ASCII to integer
+    ; Convert input to integer
+    mov     esi, input_buffer
+    call    atoi                ; Result in EAX
 
-    ; Call factorial subroutine
-    push rax                           ; Push input number to stack as argument
-    call factorial                     ; Call factorial function
-    add rsp, 8                         ; Clean up argument from stack
+    ; Store sensor value
+    mov     [sensor_value], eax
 
-    ; Display result message
-    mov rax, 1                         ; Syscall number for sys_write
-    mov rdi, 1                         ; File descriptor (stdout)
-    mov rsi, result_msg                ; Address of result message
-    mov rdx, 14                        ; Length of result message
-    syscall                            ; Make syscall
+    ; Read sensor value
+    mov     eax, [sensor_value]
 
-    ; Print the factorial result (stored in rax)
-    ; Assume rax contains the single-digit result for simplicity
-    add rax, '0'                       ; Convert integer result to ASCII
-    mov [input], al                    ; Store ASCII result in input buffer
-    mov rax, 1                         ; Syscall number for sys_write
-    mov rdi, 1                         ; File descriptor (stdout)
-    mov rsi, input                     ; Address of result
-    mov rdx, 1                         ; Length of result (1 digit)
-    syscall                            ; Make syscall
+    ; Determine actions based on sensor value
+    cmp     eax, HIGH_LEVEL
+    jg      high_level
 
-    ; Print newline
-    mov rax, 1
-    mov rdi, 1
-    mov rsi, newline
-    mov rdx, 1
-    syscall
+    cmp     eax, MODERATE_LEVEL
+    jg      moderate_level
 
+low_level:
+    ; Low level: Motor ON, Alarm OFF
+    mov     byte [motor_status], 1
+    mov     byte [alarm_status], 0
+    jmp     display_status
+
+moderate_level:
+    ; Moderate level: Motor OFF, Alarm OFF
+    mov     byte [motor_status], 0
+    mov     byte [alarm_status], 0
+    jmp     display_status
+
+high_level:
+    ; High level: Motor ON, Alarm ON
+    mov     byte [motor_status], 1
+    mov     byte [alarm_status], 1
+
+display_status:
+    ; Display motor status
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, motor_msg
+    mov     edx, 14
+    int     0x80
+
+    mov     al, [motor_status]
+    cmp     al, 1
+    je      motor_on
+    jmp     motor_off
+
+motor_on:
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, on_msg
+    mov     edx, 3
+    int     0x80
+    jmp     display_alarm
+
+motor_off:
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, off_msg
+    mov     edx, 4
+    int     0x80
+
+display_alarm:
+    ; Display alarm status
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, alarm_msg
+    mov     edx, 13
+    int     0x80
+
+    mov     al, [alarm_status]
+    cmp     al, 1
+    je      alarm_on
+    jmp     alarm_off
+
+alarm_on:
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, on_msg
+    mov     edx, 3
+    int     0x80
+    jmp     exit_program
+
+alarm_off:
+    mov     eax, 4
+    mov     ebx, 1
+    mov     ecx, off_msg
+    mov     edx, 4
+    int     0x80
+
+exit_program:
     ; Exit the program
-    mov rax, 60                        ; Syscall number for sys_exit
-    xor rdi, rdi                       ; Exit code 0
-    syscall                            ; Make syscall
+    mov     eax, 1
+    xor     ebx, ebx
+    int     0x80
 
-; Factorial subroutine
-factorial:
-    ; Prologue - save registers
-    push rbp                           ; Save base pointer
-    mov rbp, rsp                       ; Set base pointer to current stack pointer
-    push rbx                           ; Save rbx register (used as counter)
-
-    ; Factorial calculation
-    mov rax, [rbp+16]                  ; Load the argument from the stack (n)
-    mov rbx, rax                       ; Copy n to rbx as a counter
-    dec rbx                            ; Decrement counter by 1
-
-    factorial_loop:
-        cmp rbx, 0                     ; Check if counter (n-1) is 0
-        je end_factorial               ; If yes, exit loop
-        imul rax, rbx                  ; rax = rax * rbx
-        dec rbx                        ; Decrement counter
-        jmp factorial_loop             ; Repeat loop
-
-    end_factorial:
-    ; Epilogue - restore registers
-    pop rbx                            ; Restore rbx register
-    pop rbp                            ; Restore base pointer
-    ret                                ; Return to caller with result in rax
+; Subroutine: ASCII to Integer Conversion (atoi)
+atoi:
+    xor     eax, eax                ; Clear EAX (result)
+    xor     ebx, ebx                ; Clear EBX (multiplier)
+atoi_loop:
+    mov     bl, byte [esi]          ; Load character from buffer
+    cmp     bl, 10                  ; Check for newline
+    je      atoi_done
+    sub     bl, '0'                 ; Convert ASCII to digit
+    imul    eax, eax, 10            ; Multiply result by 10
+    add     eax, ebx                ; Add digit to result
+    inc     esi                     ; Move to the next character
+    jmp     atoi_loop
+atoi_done:
+    ret

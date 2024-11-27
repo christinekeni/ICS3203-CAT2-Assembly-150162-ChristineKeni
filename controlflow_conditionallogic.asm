@@ -31,11 +31,11 @@ _start:
 
     ; Check if the number is zero
     cmp eax, 0                             ; Compare eax with zero
-    je handle_zero                         ; Jump if equal (zero)
+    je handle_zero                         ; Jump if equal (zero) used for equality checks (zero).
 
     ; Check if the number is positive
-    jl handle_negative                     ; Jump if less than zero (negative)
-    jmp handle_positive                    ; Otherwise, jump to positive handler
+    jl handle_negative                     ; Jump if less than zero (negative) is used for less-than checks (negative).
+    jmp handle_positive                    ; Otherwise, jump to positive handler used for unconditional branching
 
 handle_positive:
     ; Print "POSITIVE"
